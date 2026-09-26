@@ -35,6 +35,8 @@ export interface PositionInfo {
   shareY?: number;
   /** Range penuh (DAMM v2 non-concentrated). */
   fullRange?: boolean;
+  /** Base fee pool dalam % (DAMM V2; untuk DLMM dibaca dari metadata pool). */
+  baseFeePct?: number;
   /** Strategi likuiditas DLMM dari transaksi add, mis. "Spot" atau "BidAsk 86% + Spot 14%". */
   strategy?: string;
   /** Sisi deposit saat posisi dibuka: x = hanya token X, y = hanya token Y, both = keduanya. */

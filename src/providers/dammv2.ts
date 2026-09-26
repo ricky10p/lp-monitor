@@ -22,6 +22,7 @@ const tokenMeta = (p: damm.DammOpenPosition | damm.DammClosedPosition) => ({
   symbolY: p.token_y.symbol,
   iconX: p.token_x.icon,
   iconY: p.token_y.icon,
+  baseFeePct: p.pool_config?.base_fee_pct,
 });
 
 /** Porsi token Y dari jumlah DAMM (nilai USD token X & Y). */

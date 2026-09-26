@@ -3,6 +3,7 @@ import { AxiosError } from 'axios';
 import { http } from '../api/http.js';
 import * as store from '../db.js';
 import type { PositionInfo } from '../providers/types.js';
+import { loadPoolMeta } from './bins.js';
 import { SettingsError } from './rpcSettings.js';
 
 interface TelegramSettings {
@@ -79,7 +80,33 @@ async function sendText(s: TelegramSettings, text: string) {
 export async function sendTelegramTest() {
   const s = getTelegram();
   if (!s.botToken || !s.chatId) throw new SettingsError('Isi dan simpan token bot serta chat ID terlebih dahulu.');
-  await sendText(s, '✅ <b>Meteora LP Monitor</b>\nNotifikasi Telegram tersambung. Alert open/close posisi akan dikirim ke sini.');
+  const sample: store.EventRecord = {
+    id: 0,
+    wallet: 'CONTOH',
+    label: 'Contoh wallet',
+    kind: 'open',
+    protocol: 'dlmm',
+    position: 'CONTOH',
+    pool: 'CONTOH',
+    pair: 'TOKEN-SOL',
+    created_at: 0,
+    data: {
+      protocol: 'dlmm',
+      position: 'CONTOH',
+      pool: 'CONTOH',
+      pair: 'TOKEN-SOL',
+      depositUsd: 500,
+      depositSol: 2.5,
+      strategy: 'Spot',
+      openSide: 'y',
+      bins: 69,
+      openRange: { bins: 69, minPct: -49.67, maxPct: 0, binStep: 100 },
+    },
+  };
+  await sendText(
+    s,
+    `✅ <b>Meteora LP Monitor tersambung</b>\nAlert open/close posisi akan dikirim ke sini. Contoh tampilannya:\n\n${eventText(sample, '100/2', false)}`,
+  );
 }
 
 /**
@@ -110,7 +137,14 @@ const sign = (v: number, plus: boolean) => (v < 0 ? '−' : plus && v > 0 ? '+' 
 const usd = (v: unknown, plus = false) =>
   fin(v) ? `${sign(v, plus)}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '–';
 const pct = (v: unknown) => (fin(v) ? `${sign(v, true)}${Math.abs(v).toFixed(2)}%` : '–');
-const sol = (v: unknown) => (fin(v) ? `${v.toLocaleString('en-US', { maximumFractionDigits: 3 })} SOL` : '');
+/** Jumlah SOL dengan desimal secukupnya (angka kecil tetap terlihat, mis. 0.0042 SOL); '' jika tidak ada / nol. */
+function sol(v: unknown, plus = false) {
+  if (!fin(v)) return '';
+  const a = Math.abs(v);
+  const digits = a >= 1 ? 2 : a >= 0.01 ? 3 : 4;
+  const text = a.toLocaleString('en-US', { maximumFractionDigits: digits });
+  return text === '0' ? '' : `${sign(v, plus)}${text} SOL`;
+}
 
 function duration(from?: number, to?: number) {
   if (!from) return '';
@@ -118,7 +152,7 @@ function duration(from?: number, to?: number) {
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  return d ? `${d} hari ${h} jam` : h ? `${h} jam ${m} mnt` : `${m} mnt`;
+  return d ? `${d} hari ${h} jam` : h ? `${h} jam ${m} mnt` : m ? `${m} mnt` : '< 1 mnt';
 }
 
 function pairOf(e: store.EventRecord) {
@@ -142,26 +176,79 @@ function openRangeText(p: PositionInfo) {
   return lo && hi ? `${pct(r.minPct)} / ${pct(r.maxPct)}` : hi ? pct(r.maxPct) : pct(r.minPct);
 }
 
-function eventText(e: store.EventRecord) {
+const DIVIDER = '━━━━━━━━━━━━━━';
+
+/** Persen fee ringkas: 2 → "2", 0.25 → "0.25". */
+const feeText = (v: number) => String(Number(v.toFixed(4)));
+
+/**
+ * Tag pool: DLMM → "100/2" (bin step / base fee %), DAMM V2 → "fee 2%".
+ * Metadata DLMM diambil dari cache pool (bins.ts); gagal dibaca → bin step dari range saat open, tanpa fee.
+ */
+async function poolTag(e: store.EventRecord): Promise<string> {
+  if (e.protocol !== 'dlmm') return fin(e.data.baseFeePct) ? `fee ${feeText(e.data.baseFeePct)}%` : '';
+  try {
+    const m = await loadPoolMeta(e.pool);
+    return `${m.binStep}/${feeText(m.baseFeePct)}`;
+  } catch {
+    return e.data.openRange ? `bin step ${e.data.openRange.binStep}` : '';
+  }
+}
+
+/** Satu baris "emoji Label: nilai"; kosong jika nilainya tidak ada. */
+const row = (emoji: string, label: string, value: string) => (value ? `${emoji} ${label}: ${value}` : '');
+
+function openRows(p: PositionInfo, x: string, y: string) {
+  const deposit = fin(p.depositUsd) ? `<b>${usd(p.depositUsd)}</b>${fin(p.depositSol) ? ` (${sol(p.depositSol)})` : ''}` : '';
+  const strategy = [p.strategy, sideText(p, x, y)].filter(Boolean).map(esc).join(' · ');
+  const range = p.fullRange ? 'Full range' : [openRangeText(p), p.bins ? `${p.bins} bin` : ''].filter(Boolean).join(' · ');
+  return [row('💵', 'Deposit', deposit), row('🎯', 'Strategi', strategy), row('📏', 'Range', range)];
+}
+
+function closeRows(p: PositionInfo) {
+  const profit = fin(p.pnlUsd) && p.pnlUsd >= 0;
+  const pnl = fin(p.pnlUsd)
+    ? `<b>${usd(p.pnlUsd, true)}</b> (${pct(p.pnlPct)})${sol(p.pnlSol, true) ? ` · ${sol(p.pnlSol, true)}` : ''}`
+    : 'belum tersedia';
+  return [
+    row(profit ? '📈' : '📉', 'PnL', pnl),
+    row('💰', 'Fee', fin(p.feesUsd) ? usd(p.feesUsd) : ''),
+    row('💵', 'Modal', fin(p.depositUsd) ? usd(p.depositUsd) : ''),
+    row('⏱', 'Durasi', esc(duration(p.openedAt, p.closedAt))),
+  ];
+}
+
+/**
+ * Kartu alert satu posisi, mis.:
+ *   🟢 POSISI DIBUKA
+ *   👛 Friday
+ *   🪙 ETCH / SOL · DLMM 100/2
+ *   ━━━━━━━━━━━━━━
+ *   💵 Deposit: $648.56 (5.21 SOL)
+ *   🎯 Strategi: Spot · Double side ETCH + SOL
+ *   📏 Range: −49.67% / +98.07% · 72 bin
+ *   ━━━━━━━━━━━━━━
+ *   🔗 Meteora | Posisi | Wallet
+ */
+function eventText(e: store.EventRecord, tag: string, withLinks = true) {
   const p = e.data;
   const open = e.kind === 'open';
-  const [x, y] = pairOf(e).split(' / ');
-  const lines = [`${open ? '🟢' : '🔴'} <b>${esc(e.label)}</b> ${open ? 'membuka' : 'menutup'} posisi <b>${esc(pairOf(e))}</b>`];
-  if (open) {
-    lines.push([PROTO[e.protocol] ?? e.protocol, p.strategy, sideText(p, x, y), p.fullRange ? 'Full range' : ''].filter(Boolean).map(esc).join(' · '));
-    const range = openRangeText(p);
-    const deposit = fin(p.depositUsd) ? `Deposit <b>${usd(p.depositUsd)}</b>${fin(p.depositSol) ? ` (${sol(p.depositSol)})` : ''}` : '';
-    lines.push([deposit, range && `Range ${range}`, p.bins ? `${p.bins} bin` : ''].filter(Boolean).join(' · '));
-  } else {
-    const pnl = fin(p.pnlUsd) ? `PnL <b>${usd(p.pnlUsd, true)}</b> (${pct(p.pnlPct)})` : 'PnL belum tersedia';
-    lines.push([PROTO[e.protocol] ?? e.protocol, pnl].join(' · '));
-    lines.push([fin(p.feesUsd) ? `Fee ${usd(p.feesUsd)}` : '', fin(p.depositUsd) ? `Modal ${usd(p.depositUsd)}` : '', duration(p.openedAt, p.closedAt) && `Durasi ${duration(p.openedAt, p.closedAt)}`]
-      .filter(Boolean)
-      .join(' · '));
-  }
+  const pair = pairOf(e);
+  const [x, y] = pair.split(' / ');
   const pool = `https://app.meteora.ag/${e.protocol === 'dlmm' ? 'dlmm' : 'dammv2'}/${e.pool}`;
-  lines.push(`<a href="${pool}">Pool</a> · <a href="https://solscan.io/account/${e.position}">Posisi</a> · <a href="https://solscan.io/account/${e.wallet}">Wallet</a>`);
-  return lines.filter(Boolean).join('\n');
+  return [
+    open ? '🟢 <b>POSISI DIBUKA</b>' : '🔴 <b>POSISI DITUTUP</b>',
+    `👛 <b>${esc(e.label)}</b>`,
+    `🪙 <b>${esc(pair)}</b> · ${PROTO[e.protocol] ?? esc(e.protocol)}${tag ? ` <b>${esc(tag)}</b>` : ''}`,
+    DIVIDER,
+    ...(open ? openRows(p, x, y) : closeRows(p)),
+    withLinks ? DIVIDER : '',
+    withLinks
+      ? `🔗 <a href="${pool}">Meteora</a> | <a href="https://solscan.io/account/${e.position}">Posisi</a> | <a href="https://solscan.io/account/${e.wallet}">Wallet</a>`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** Gabungkan beberapa blok teks jadi pesan-pesan yang muat batas panjang Telegram. */
@@ -184,7 +271,8 @@ export async function notifyTelegram(events: store.EventRecord[]) {
   const s = getTelegram();
   if (!s.enabled || !s.botToken || !s.chatId) return;
   const picked = events.filter((e) => (e.kind === 'open' ? s.notifyOpen : s.notifyClose));
-  for (const text of chunk(picked.map(eventText))) {
+  const tags = await Promise.all(picked.map(poolTag));
+  for (const text of chunk(picked.map((e, i) => eventText(e, tags[i])))) {
     try {
       await sendText(s, text);
     } catch (err) {
