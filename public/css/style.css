@@ -528,18 +528,53 @@ table.table { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .login .field-error { font-size: 13px; margin: 8px 0; min-height: 1em; }
 
 /* ================= responsif ================= */
+.nav a { white-space: nowrap; }
+/* Kolom cari mengisi sisa ruang topbar (maks 290px), jadi topbar tidak pernah melebihi layar. */
+.topbar-right { flex: 1; min-width: 0; justify-content: flex-end; }
+.search { flex: 0 1 290px; width: auto; min-width: 150px; }
+
+/* Layar sedang (laptop kecil, "mode desktop" di HP ±980px): topbar dipadatkan supaya tetap satu baris. */
+@media (max-width: 1240px) {
+  .topbar { gap: 14px; }
+  .brand-text, .live-text { display: none; }
+  .live { padding: 0 11px; }
+}
+
+/*
+ * HP & tablet: menu pindah ke tab bar di bawah layar (seperti aplikasi HP), topbar cukup
+ * logo + cari + status + tombol. backdrop-filter dimatikan karena membuat position: fixed
+ * pada menu di dalam topbar ikut menempel ke topbar, bukan ke layar.
+ */
 @media (max-width: 960px) {
   .overview, .two-col { grid-template-columns: minmax(0, 1fr); }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .search { width: 200px; }
+  .topbar { padding: 0 12px; gap: 10px; backdrop-filter: none; background: var(--bg); }
+  .topbar-right { gap: 6px; }
+  .search { flex: 1 1 auto; min-width: 0; }
+  .search kbd { display: none; }
+  .nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    background: var(--bg); border-top: 1px solid var(--border);
+  }
+  .nav a {
+    position: relative; flex-direction: column; justify-content: center; gap: 3px; height: 54px; padding: 0 2px;
+    font-size: 11px; border-radius: 8px; text-align: center; overflow: hidden; text-overflow: ellipsis;
+  }
+  .nav a svg { width: 20px; height: 20px; }
+  .nav a.active { background: var(--green-soft); box-shadow: none; color: var(--green); }
+  .nav-badge { position: absolute; top: 3px; left: calc(50% + 6px); }
+  body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
+  .toasts { bottom: calc(74px + env(safe-area-inset-bottom)); right: 12px; left: 12px; max-width: none; }
 }
+
 @media (max-width: 720px) {
-  :root { --topbar-h: 128px; }
-  .topbar { height: auto; padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
-  .brand-text, .live-text { display: none; }
-  .search { order: 5; width: 100%; }
-  .nav { order: 4; width: 100%; }
   .container { padding: 14px 14px 48px; }
+  /* Alamat wallet lengkap (halaman portfolio) boleh dilipat supaya tidak melebihi layar. */
+  .pf-head .addr { min-width: 0; word-break: break-all; }
+  /* Persen PnL turun ke baris kedua supaya kolom tabel tidak terpotong. */
+  .table td.num .nowrap { display: block; }
   .hide-sm { display: none; }
   .table td, .table th { padding: 9px 8px; }
   .panel-grid { grid-template-columns: 1fr; }
@@ -581,7 +616,6 @@ table.table { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .tlog-match { color: var(--green); font-weight: 600; }
 @media (max-width: 960px) { .tgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .tgrid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 720px) { .nav { overflow-x: auto; } .nav a { white-space: nowrap; } }
 
 /* ================= strategi posisi DLMM ================= */
 .badge.strat { font-weight: 600; }
