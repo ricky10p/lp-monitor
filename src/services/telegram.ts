@@ -82,7 +82,7 @@ export async function sendTelegramTest() {
   if (!s.botToken || !s.chatId) throw new SettingsError('Isi dan simpan token bot serta chat ID terlebih dahulu.');
   const sample: store.EventRecord = {
     id: 0,
-    wallet: 'CONTOH',
+    wallet: 'AlamatWalletContoh1111111111111111111111111',
     label: 'Contoh wallet',
     kind: 'open',
     protocol: 'dlmm',
@@ -221,7 +221,7 @@ function closeRows(p: PositionInfo) {
 /**
  * Kartu alert satu posisi, mis.:
  *   🟢 POSISI DIBUKA
- *   👛 Friday
+ *   👛 Friday · 3j6EKRQb…9AGNM (alamat lengkap, ketuk untuk menyalin)
  *   🪙 ETCH / SOL · DLMM 100/2
  *   ━━━━━━━━━━━━━━
  *   💵 Deposit: $648.56 (5.21 SOL)
@@ -238,7 +238,8 @@ function eventText(e: store.EventRecord, tag: string, withLinks = true) {
   const pool = `https://app.meteora.ag/${e.protocol === 'dlmm' ? 'dlmm' : 'dammv2'}/${e.pool}`;
   return [
     open ? '🟢 <b>POSISI DIBUKA</b>' : '🔴 <b>POSISI DITUTUP</b>',
-    `👛 <b>${esc(e.label)}</b>`,
+    // <code> = di Telegram cukup diketuk sekali untuk menyalin alamat wallet.
+    `👛 <b>${esc(e.label)}</b> · <code>${esc(e.wallet)}</code>`,
     `🪙 <b>${esc(pair)}</b> · ${PROTO[e.protocol] ?? esc(e.protocol)}${tag ? ` <b>${esc(tag)}</b>` : ''}`,
     DIVIDER,
     ...(open ? openRows(p, x, y) : closeRows(p)),
