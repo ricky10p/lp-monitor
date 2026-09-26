@@ -41,7 +41,7 @@ const tracker: Tracker = new Tracker(
 // Progress Track Wallet dikirim ke browser lewat SSE yang sama dengan alert.
 onTrackUpdate((job) => broadcast('track', job));
 void curlAvailable().then((ok) => {
-  if (!ok) console.warn('[track] curl tidak ditemukan — scan GMGN tidak bisa dipakai (Ubuntu: sudo apt install curl)');
+  if (!ok) console.warn(`[track] ${config.gmgnCurl} tidak ditemukan — scan GMGN tidak bisa dipakai (cek GMGN_CURL / sudo apt install curl)`);
 });
 
 const server = createServer(tracker).listen(config.port, config.host, () => {

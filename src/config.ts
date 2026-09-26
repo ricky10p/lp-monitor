@@ -30,6 +30,11 @@ export const config = {
   seedPath: process.env.SEED_PATH || 'wallets.seed.json',
   /** RPC Solana untuk membaca saldo token wallet (USDC). Public RPC cukup; ganti ke Helius/QuickNode jika sering 429. */
   solanaRpcUrl: process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
+  /**
+   * Binary curl untuk scan GMGN. Di Linux curl bawaan (OpenSSL) diblokir Cloudflare karena
+   * fingerprint TLS-nya — isi dengan wrapper curl-impersonate, mis. /usr/local/bin/curl_chrome131.
+   */
+  gmgnCurl: process.env.GMGN_CURL?.trim() || 'curl',
   /** Jumlah event open/close yang disimpan di database. */
   eventsKeep: 5000,
 };

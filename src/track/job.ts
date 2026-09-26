@@ -295,8 +295,9 @@ async function collectWallets(job: Job, opts: StartOptions) {
   const all = store.getTrackWallets(job.contract);
   if (!all.length && scanError) {
     throw new Error(
-      `Scan GMGN gagal (${scanError}). Kemungkinan IP server diblokir GMGN atau CLIENT_ID/APP_VER kedaluwarsa — ` +
-        'tempel daftar wallet secara manual di form.',
+      `Scan GMGN gagal (${scanError}). Di VPS Linux, curl bawaan diblokir Cloudflare GMGN — pasang curl-impersonate ` +
+        'dan isi GMGN_CURL di .env (lihat DEPLOY.md); bisa juga CLIENT_ID/APP_VER kedaluwarsa. ' +
+        'Sementara itu, tempel daftar wallet secara manual di form.',
     );
   }
   log(job, `${scanned.size} wallet dari scan, ${all.length} total tersimpan untuk token ini.`);

@@ -102,6 +102,24 @@ npm -v
 pm2 -v
 ```
 
+**curl-impersonate (untuk scan GMGN di Track Wallet).** Cloudflare GMGN memblokir curl bawaan Linux karena fingerprint TLS-nya (lewat proxy pun tetap diblokir). curl-impersonate meniru fingerprint Chrome:
+
+```bash
+cd /tmp
+URL=$(curl -s https://api.github.com/repos/lexiforest/curl-impersonate/releases/latest \
+  | grep -o 'https://[^"]*x86_64-linux-gnu\.tar\.gz' | grep -v libcurl | head -1)
+echo "$URL"
+curl -L "$URL" -o ci.tar.gz && mkdir -p ci && tar xzf ci.tar.gz -C ci
+sudo cp ci/* /usr/local/bin/
+ls /usr/local/bin | grep curl_chrome   # pilih versi tertinggi, mis. curl_chrome131
+
+# Tes: harus diakhiri 200 dan berisi "code":0
+/usr/local/bin/curl_chrome131 -s --compressed -w '\n%{http_code}\n' \
+  'https://gmgn.ai/vas/api/mul-region/token_trades_v2/sol/So11111111111111111111111111111111111111112?event=remove&limit=2'
+```
+
+Path wrapper itu nanti diisi ke `GMGN_CURL` di `.env` (Langkah 5).
+
 > **VPS RAM 1 GB?** Tambahkan swap supaya `npm ci` tidak kehabisan memori:
 > ```bash
 > sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
@@ -160,6 +178,7 @@ TRACKER_CONCURRENCY=4
 CLOSE_CONFIRM_POLLS=3
 SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=API-KEY-HELIUS-ANDA
 DB_PATH=data/monitor.db
+GMGN_CURL=/usr/local/bin/curl_chrome131
 ```
 
 Simpan: `Ctrl+O`, `Enter`, `Ctrl+X`. Lalu kunci aksesnya:
@@ -408,7 +427,7 @@ Selama jendela itu terbuka, buka **http://localhost:3000** di PC. (Login di sini
 | Status kanan atas terus *"Terputus, menyambung ulang…"* | Blok `location /api/stream` di Nginx hilang / berbeda. Ulangi Langkah 8a lalu jalankan lagi `sudo certbot --nginx -d lp-monitor.duckdns.org` |
 | Saldo SOL/USDC "gagal dibaca", strategi / grafik bin gagal | RPC mati atau kena limit (429). **Pengaturan → RPC**, klik **Tes**, tambahkan RPC cadangan |
 | Log sering berisi `rate limit (HTTP 429)` dari Meteora | Terlalu banyak wallet per siklus. Naikkan `POLL_INTERVAL_SEC` (mis. 10) atau turunkan `TRACKER_CONCURRENCY` (mis. 2), lalu restart |
-| Track Wallet: *"Scan GMGN gagal"* | IP VPS diblokir GMGN / konstanta GMGN kedaluwarsa. Jalankan scan di PC, lalu tempel daftar wallet di **Tempel daftar wallet manual** |
+| Track Wallet: *"Scan GMGN gagal (HTTP 403)"* | curl bawaan Linux diblokir Cloudflare GMGN. Pasang curl-impersonate (Langkah 2), isi `GMGN_CURL` di `.env`, `pm2 restart lp-monitor`. Jika wrapper-nya juga 403, konstanta `CLIENT_ID`/`APP_VER` mungkin kedaluwarsa. Darurat: scan di PC lalu tempel daftar wallet di **Tempel daftar wallet manual** |
 | Pesan tes Telegram gagal: *"chat ID tidak ditemukan"* | Kirim `/start` ke bot dulu (untuk grup: tambahkan bot ke grup), lalu klik **Deteksi** lagi |
 | `npm ci` berhenti / *"Killed"* | RAM habis. Tambahkan swap (lihat Langkah 2) |
 | `git pull` menolak: *"Your local changes would be overwritten"* | Ada file kode yang diubah langsung di VPS. Buang perubahan itu: `git checkout -- .` lalu `git pull` lagi (`.env` dan `data/` aman, tidak dilacak git) |

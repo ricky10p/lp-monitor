@@ -66,7 +66,7 @@ Update versi: salin file baru → `npm ci && npm run build && pm2 restart lp-mon
 Catatan:
 - **pm2 harus 1 instance** (sudah diatur di `ecosystem.config.cjs`): tracker dan job Track Wallet menyimpan state di memori.
 - **Interval 5 detik**: `POLL_INTERVAL_SEC=5`, wallet dicek paralel sebanyak `TRACKER_CONCURRENCY` (default 4). Lihat durasi siklus di tooltip indikator *Live* (kanan atas). Kalau log sering berisi error 429 (rate limit Meteora), turunkan `TRACKER_CONCURRENCY` atau naikkan interval.
-- **GMGN**: konstanta `CLIENT_ID` / `APP_VER` di `src/track/gmgn.ts` ikut berubah tiap GMGN update web-nya — kalau scan ditolak (403 / `code != 0`), ambil nilai baru dari Network tab browser. Kalau IP VPS diblokir GMGN, jalankan scan di PC lokal lalu tempel daftar wallet-nya di kolom **Tempel daftar wallet manual** (tahap 1 dilewati).
+- **GMGN**: konstanta `CLIENT_ID` / `APP_VER` di `src/track/gmgn.ts` ikut berubah tiap GMGN update web-nya — kalau scan ditolak (403 / `code != 0`), ambil nilai baru dari Network tab browser. Di VPS Linux, curl bawaan diblokir Cloudflare GMGN karena fingerprint TLS-nya (bukan IP — proxy pun tetap diblokir): pasang curl-impersonate dan isi `GMGN_CURL` di `.env` (lihat DEPLOY.md Langkah 2). Alternatif: jalankan scan di PC lokal lalu tempel daftar wallet-nya di kolom **Tempel daftar wallet manual** (tahap 1 dilewati).
 
 ## Endpoint yang dipakai
 

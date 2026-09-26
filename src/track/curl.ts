@@ -6,13 +6,21 @@
  *      bukan browser). curl + User-Agent di bawah tembus 200.
  *   2. Header "accept: application/json" JUGA memicu 403. Jadi request di sini sengaja
  *      tidak mengirim header accept sama sekali.
- * Keduanya sudah diuji langsung. Jangan diganti tanpa mengetes ulang.
+ *   3. Di Linux, curl bawaan (OpenSSL) TETAP diblokir Cloudflare ("Sorry, you have been
+ *      blocked") walaupun lewat proxy residensial — yang dicek fingerprint TLS/HTTP2, bukan IP.
+ *      curl Windows (Schannel) lolos. Di VPS isi GMGN_CURL dengan wrapper curl-impersonate
+ *      (mis. curl_chrome131); wrapper itu memasang UA + header Chrome sendiri, jadi -A tidak dikirim.
+ * Semuanya sudah diuji langsung. Jangan diganti tanpa mengetes ulang.
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { config } from '../config.js';
 import { withRetry, type OnRetry } from '../lib/retry.js';
 
 const execFileAsync = promisify(execFile);
+const CURL_BIN = config.gmgnCurl;
+/** Wrapper curl-impersonate sudah membawa UA/header Chrome yang cocok dengan fingerprint-nya. */
+const IMPERSONATE = CURL_BIN !== 'curl';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
@@ -28,15 +36,19 @@ class HttpStatusError extends Error {
 
 class CurlMissingError extends Error {
   constructor() {
-    super('curl tidak ditemukan di PATH — scan GMGN butuh curl (Ubuntu: sudo apt install curl).');
+    super(
+      IMPERSONATE
+        ? `GMGN_CURL="${CURL_BIN}" tidak ditemukan — cek path curl-impersonate di .env (lihat DEPLOY.md).`
+        : 'curl tidak ditemukan di PATH — scan GMGN butuh curl (Ubuntu: sudo apt install curl).',
+    );
   }
 }
 
 async function httpGet(url: string) {
-  const args = ['-s', '--compressed', '--max-time', '30', '-A', USER_AGENT, '-w', '\n%{http_code}', url];
+  const args = ['-s', '--compressed', '--max-time', '30', ...(IMPERSONATE ? [] : ['-A', USER_AGENT]), '-w', '\n%{http_code}', url];
   let stdout: string;
   try {
-    ({ stdout } = await execFileAsync('curl', args, { maxBuffer: MAX_BUFFER }));
+    ({ stdout } = await execFileAsync(CURL_BIN, args, { maxBuffer: MAX_BUFFER }));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new CurlMissingError();
     throw err;
@@ -48,7 +60,7 @@ async function httpGet(url: string) {
 /** Apakah curl tersedia? Dipakai saat startup untuk memberi peringatan. */
 export async function curlAvailable() {
   try {
-    await execFileAsync('curl', ['--version']);
+    await execFileAsync(CURL_BIN, ['--version']);
     return true;
   } catch {
     return false;
