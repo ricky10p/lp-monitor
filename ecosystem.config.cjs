@@ -5,7 +5,10 @@ module.exports = {
       name: 'lp-monitor',
       script: 'dist/index.js',
       cwd: __dirname,
-      instances: 1, // wajib 1: tracker & job Track Wallet menyimpan state di memori
+      // Mode fork, 1 instance: tracker & job Track Wallet menyimpan state di memori. Mode cluster juga
+      // menyembunyikan error start (mis. port bentrok) sehingga status tetap terlihat "online".
+      exec_mode: 'fork',
+      instances: 1,
       autorestart: true,
       max_memory_restart: '512M',
       env: { NODE_ENV: 'production' },

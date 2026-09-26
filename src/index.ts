@@ -51,6 +51,20 @@ const server = createServer(tracker).listen(config.port, config.host, () => {
   tracker.start();
 });
 
+// Port bentrok (mis. aplikasi lain sudah memakai port 3000): beri pesan jelas lalu berhenti,
+// supaya pm2 menampilkan status error — bukan terlihat "online" padahal dashboard tidak bisa dibuka.
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `[web] Port ${config.port} sudah dipakai program lain. Cek dengan: sudo ss -ltnp | grep :${config.port}\n` +
+        `      Hentikan program itu, atau ganti PORT di .env (dan proxy_pass di konfigurasi Nginx) ke port lain.`,
+    );
+  } else {
+    console.error('[web] server gagal start:', err);
+  }
+  process.exit(1);
+});
+
 function shutdown(signal: string) {
   console.log(`[web] ${signal}, berhenti…`);
   tracker.stop();

@@ -402,6 +402,7 @@ Selama jendela itu terbuka, buka **http://localhost:3000** di PC. (Login di sini
 | `certbot` gagal: *"Timeout during connect"* / *"unauthorized"* | Domain belum mengarah ke VPS atau port 80 tertutup. Cek Langkah 0 (`nslookup` = IP VPS), `sudo ufw status` (Nginx Full), dan firewall di panel penyedia VPS |
 | Browser tidak bisa membuka lp-monitor.duckdns.org sama sekali | IP di DuckDNS salah (mis. terisi IP rumah). Perbaiki di duckdns.org → **update ip** |
 | pm2 status `errored`, log: *"NODE_ENV=production … Isi DASHBOARD_PASSWORD"* | `DASHBOARD_PASSWORD` di `.env` masih kosong. Isi, lalu `pm2 restart lp-monitor` |
+| Domain menampilkan halaman lain (mis. *"server aktif"*), `curl http://127.0.0.1:3000/api/me` membalas *"Cannot GET /api/me"*, atau log: *"Port 3000 sudah dipakai program lain"* | Ada aplikasi lain di port 3000. Pindahkan lp-monitor ke port lain: `sed -i 's/^PORT=.*/PORT=3100/' .env`, lalu `sudo sed -i 's#127.0.0.1:3000#127.0.0.1:3100#' /etc/nginx/sites-available/lp-monitor`, `sudo nginx -t && sudo systemctl reload nginx`, `pm2 restart lp-monitor` |
 | Browser: **502 Bad Gateway** | Aplikasi tidak jalan. Cek `pm2 status` dan `pm2 logs lp-monitor`. Pastikan `PORT=3000` di `.env` |
 | Tidak bisa login padahal password benar | Masih HTTP tapi `SECURE_COOKIE=true`. Buka lewat **https://**, atau set `false` jika belum ada SSL |
 | Status kanan atas terus *"Terputus, menyambung ulang…"* | Blok `location /api/stream` di Nginx hilang / berbeda. Ulangi Langkah 8a lalu jalankan lagi `sudo certbot --nginx -d lp-monitor.duckdns.org` |
