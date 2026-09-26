@@ -1,19 +1,22 @@
 # Tutorial Deploy ke VPS Ubuntu
 
-Panduan lengkap memasang **Meteora LP Monitor** di VPS Ubuntu (22.04 / 24.04), dari VPS kosong sampai dashboard bisa dibuka lewat `https://domain-anda.com` dengan login, berjalan 24 jam, dan hidup lagi otomatis setelah reboot.
+Panduan lengkap memasang **Meteora LP Monitor** di VPS Ubuntu (22.04 / 24.04): dari VPS kosong, `git clone` dari GitHub, sampai dashboard bisa dibuka di **https://lp-monitor.duckdns.org** dengan login, berjalan 24 jam, dan hidup lagi otomatis setelah reboot.
+
+- Repo: **https://github.com/ricky10p/lp-monitor**
+- Domain: **lp-monitor.duckdns.org** (subdomain gratis DuckDNS)
 
 **Kenapa VPS (bukan Vercel/serverless)?** Tracker harus berjalan terus setiap 5 detik, database-nya SQLite di disk, alert memakai koneksi live (SSE) yang panjang, dan scan GMGN butuh `curl`. Semua itu butuh server yang selalu menyala.
 
 ## Gambaran akhir
 
 ```
-Browser ──HTTPS──▶ Nginx (port 443, SSL Let's Encrypt)
-                     │  proxy
-                     ▼
-                  Node.js app (127.0.0.1:3000, dijalankan pm2)
-                     │
-                     ├─ data/monitor.db  (SQLite: wallet, alert, pengaturan RPC & Telegram)
-                     └─ API Meteora, RPC Solana, Telegram, GMGN
+Browser ──HTTPS──▶ lp-monitor.duckdns.org ──▶ Nginx di VPS (port 443, SSL Let's Encrypt)
+                                                 │  proxy
+                                                 ▼
+                                              Node.js app (127.0.0.1:3000, dijalankan pm2)
+                                                 │
+                                                 ├─ data/monitor.db  (wallet, alert, pengaturan RPC & Telegram)
+                                                 └─ API Meteora, RPC Solana, Telegram, GMGN
 ```
 
 Port 3000 **tidak** dibuka ke internet. Hanya Nginx (80/443) dan SSH (22) yang bisa diakses dari luar.
@@ -23,21 +26,39 @@ Port 3000 **tidak** dibuka ke internet. Hanya Nginx (80/443) dan SSH (22) yang b
 | Kebutuhan | Keterangan |
 |---|---|
 | VPS Ubuntu 22.04 / 24.04 | Minimal **1 vCPU, 1 GB RAM**, 10 GB disk. 2 GB RAM lebih lega jika memantau banyak wallet |
-| Akses SSH | IP VPS + user `root` (atau user dengan sudo) dari penyedia VPS |
-| Domain (disarankan) | Mis. `monitor.domainanda.com`. Tanpa domain tetap bisa, lihat [Akses tanpa domain](#akses-tanpa-domain-ssh-tunnel) |
+| IP VPS + akses SSH | Dari penyedia VPS (user `root` + password / SSH key) |
+| Akun DuckDNS | Domain `lp-monitor.duckdns.org` (Langkah 0) |
 | RPC Solana (disarankan) | Mis. Helius (gratis). RPC publik cepat kena limit |
 | Bot Telegram (opsional) | Diatur belakangan dari halaman **Pengaturan** |
 
-Di tutorial ini: IP VPS = `203.0.113.10`, domain = `monitor.domainanda.com`, user = `lpmon`. Ganti dengan milik Anda.
+Di tutorial ini ada dua nilai yang **harus Anda ganti** dengan milik Anda:
+
+- `IP-VPS` → IP VPS Anda, mis. `203.0.113.10`
+- `lpmon` → nama user Linux yang akan dibuat (boleh dibiarkan `lpmon`)
 
 ---
 
+## Langkah 0 — Arahkan lp-monitor.duckdns.org ke VPS
+
+1. Buka **https://www.duckdns.org**, login (GitHub / Google).
+2. Pastikan subdomain **lp-monitor** sudah ada di daftar domain Anda (jika belum: isi `lp-monitor` di kolom *sub domain*, klik **add domain**).
+3. Di baris `lp-monitor`, isi kolom **current ip** dengan **IP VPS** (bukan IP rumah / PC), lalu klik **update ip**.
+4. Tunggu 1–2 menit, lalu cek dari PC (PowerShell):
+
+   ```powershell
+   nslookup lp-monitor.duckdns.org
+   ```
+
+   Hasil `Address:` harus sama dengan IP VPS. Jika belum, tunggu sebentar dan cek lagi. **Jangan lanjut ke Langkah 8 sebelum ini benar**, karena sertifikat HTTPS gagal dibuat jika domain belum mengarah ke VPS.
+
+> IP VPS biasanya tetap, jadi cukup diatur sekali. Jika penyedia VPS mengganti IP (mis. setelah rebuild), ulangi langkah ini.
+
 ## Langkah 1 — Masuk ke VPS dan buat user khusus
 
-Jangan menjalankan aplikasi sebagai `root`. Dari PC (PowerShell / Terminal):
+Jangan menjalankan aplikasi sebagai `root`. Dari PC (PowerShell):
 
-```bash
-ssh root@203.0.113.10
+```powershell
+ssh root@IP-VPS
 ```
 
 Di VPS:
@@ -46,11 +67,11 @@ Di VPS:
 # Update sistem
 apt update && apt upgrade -y
 
-# Buat user baru (isi password saat diminta), beri akses sudo
+# Buat user baru (isi password saat diminta; pertanyaan lain boleh Enter saja), beri akses sudo
 adduser lpmon
 usermod -aG sudo lpmon
 
-# (Opsional) samakan zona waktu log dengan WIB
+# Zona waktu WIB (supaya jam di log sesuai)
 timedatectl set-timezone Asia/Jakarta
 
 exit
@@ -58,8 +79,8 @@ exit
 
 Mulai sekarang login sebagai user baru:
 
-```bash
-ssh lpmon@203.0.113.10
+```powershell
+ssh lpmon@IP-VPS
 ```
 
 ## Langkah 2 — Pasang paket yang dibutuhkan
@@ -69,14 +90,14 @@ ssh lpmon@203.0.113.10
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Compiler (cadangan jika better-sqlite3 perlu di-build), curl untuk GMGN, Nginx, sqlite3 untuk backup
-sudo apt-get install -y build-essential python3 curl nginx sqlite3
+# git (ambil kode), compiler (cadangan untuk better-sqlite3), curl (scan GMGN), Nginx, sqlite3 (backup)
+sudo apt-get install -y git build-essential python3 curl nginx sqlite3
 
 # pm2: menjalankan aplikasi di latar belakang, restart otomatis, hidup lagi setelah reboot
 sudo npm install -g pm2
 
 # Cek versi
-node -v    # harus v20 atau lebih baru (v22.x)
+node -v    # harus v22.x
 npm -v
 pm2 -v
 ```
@@ -90,26 +111,24 @@ pm2 -v
 
 ## Langkah 3 — Ambil kode dari GitHub
 
-Kode ada di GitHub: **https://github.com/ricky10p/lp-monitor** (repo publik, clone tanpa login). Di **VPS**:
-
 ```bash
-sudo apt-get install -y git
 cd ~
 git clone https://github.com/ricky10p/lp-monitor.git
 cd ~/lp-monitor
-ls   # harus terlihat: src public package.json ecosystem.config.cjs deploy DEPLOY.md ...
+ls   # harus terlihat: DEPLOY.md README.md deploy ecosystem.config.cjs package.json public src ...
 ```
 
 File rahasia & data **tidak ada** di GitHub (`.env`, `data/`, `wallets.seed.json`), jadi dibuat / disalin terpisah di langkah berikutnya.
 
-> Ingin wallet langsung terisi saat pertama jalan? Salin `wallets.seed.json` dari PC (PowerShell di folder proyek):
-> `scp wallets.seed.json lpmon@203.0.113.10:~/lp-monitor/`. File ini hanya dibaca sekali saat database masih kosong.
+> Ingin wallet langsung terisi saat pertama jalan? Dari PowerShell di folder proyek PC (`Documents\Gabungan`):
+> `scp wallets.seed.json lpmon@IP-VPS:~/lp-monitor/`
+> File ini hanya dibaca sekali saat database masih kosong. Lewati jika Anda memindahkan database lama (Langkah 6).
 
 ## Langkah 4 — Install dependensi dan build
 
 ```bash
 cd ~/lp-monitor
-npm ci          # install persis sesuai package-lock.json
+npm ci          # install persis sesuai package-lock.json (1–3 menit)
 npm run build   # compile TypeScript ke folder dist/
 mkdir -p logs data
 ```
@@ -121,58 +140,64 @@ Jika `npm run build` selesai tanpa error, lanjut.
 ```bash
 cp .env.example .env
 
-# Buat password dashboard & kunci sesi yang kuat (salin hasilnya)
+# Buat password dashboard & kunci sesi yang kuat — SALIN kedua hasilnya
 openssl rand -base64 18
 openssl rand -hex 32
 
 nano .env
 ```
 
-Isi minimal seperti ini:
+Ubah isinya menjadi seperti ini (ganti tiga nilai yang ditandai):
 
 ```ini
 PORT=3000
 HOST=127.0.0.1
-DASHBOARD_PASSWORD=isi-dengan-password-kuat
-SESSION_SECRET=isi-dengan-hasil-openssl-rand-hex-32
-SECURE_COOKIE=false          # ubah ke true setelah HTTPS aktif (Langkah 8)
+DASHBOARD_PASSWORD=HASIL-openssl-rand-base64-18
+SESSION_SECRET=HASIL-openssl-rand-hex-32
+SECURE_COOKIE=false
 POLL_INTERVAL_SEC=5
 TRACKER_CONCURRENCY=4
 CLOSE_CONFIRM_POLLS=3
-SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=API_KEY_ANDA
+SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=API-KEY-HELIUS-ANDA
 DB_PATH=data/monitor.db
 ```
 
-Simpan: `Ctrl+O`, `Enter`, `Ctrl+X`.
+Simpan: `Ctrl+O`, `Enter`, `Ctrl+X`. Lalu kunci aksesnya:
+
+```bash
+chmod 600 .env
+```
 
 Catatan penting:
 
-- **`DASHBOARD_PASSWORD` wajib.** pm2 menjalankan aplikasi dengan `NODE_ENV=production`, dan di mode itu server **menolak start** tanpa password. Ini sengaja: lewat Nginx dashboard bisa dibuka dari internet.
+- **Catat `DASHBOARD_PASSWORD`**: ini password untuk login ke dashboard.
+- **`DASHBOARD_PASSWORD` wajib.** pm2 menjalankan aplikasi dengan `NODE_ENV=production`, dan di mode itu server **menolak start** tanpa password.
 - **`HOST` tetap `127.0.0.1`.** Yang menghadap internet adalah Nginx, bukan aplikasi.
-- **`SOLANA_RPC_URL`** hanya dipakai sekali sebagai RPC awal. Setelah itu RPC (bisa lebih dari satu, dengan failover otomatis) diatur dari halaman **Pengaturan**.
-- **Jaga kerahasiaan file `.env`**: `chmod 600 .env`.
+- **`SECURE_COOKIE=false` dulu**; diubah ke `true` setelah HTTPS aktif (Langkah 8e).
+- **`SOLANA_RPC_URL`** hanya dipakai sekali sebagai RPC awal. Setelah itu RPC (bisa lebih dari satu, failover otomatis) diatur dari halaman **Pengaturan**.
 
 ## Langkah 6 — (Opsional) Pindahkan database dari PC
 
 Lewati langkah ini jika ingin mulai dari database kosong.
 
-1. **Hentikan server di PC** dulu supaya database tidak sedang ditulis.
-2. Dari PowerShell di folder proyek PC:
+1. **Hentikan server di PC** dulu (tutup jendela `npm run dev`) supaya database tidak sedang ditulis.
+2. Dari PowerShell di folder proyek PC (`Documents\Gabungan`):
 
    ```powershell
-   scp data/monitor.db lpmon@203.0.113.10:~/lp-monitor/data/
-   # jika ada, salin juga: data/monitor.db-wal dan data/monitor.db-shm
+   scp data/monitor.db lpmon@IP-VPS:~/lp-monitor/data/
    ```
 
-Database membawa semua wallet, riwayat alert, hasil Track Wallet, serta pengaturan RPC & Telegram. **Sesi login tidak ikut berlaku**: login ulang di VPS.
+   Jika di folder `data` PC ada `monitor.db-wal` dan `monitor.db-shm`, salin juga keduanya dengan cara yang sama.
+
+Database membawa semua wallet, riwayat alert, hasil Track Wallet, serta pengaturan RPC & Telegram. Sesi login tidak ikut: login ulang di VPS.
 
 ## Langkah 7 — Jalankan dengan pm2
 
 ```bash
 cd ~/lp-monitor
 pm2 start ecosystem.config.cjs
-pm2 status                 # lp-monitor harus "online"
-pm2 logs lp-monitor --lines 30
+pm2 status                              # lp-monitor harus "online"
+pm2 logs lp-monitor --lines 30 --nostream
 ```
 
 Log yang benar kira-kira:
@@ -192,7 +217,7 @@ Aktifkan start otomatis setelah reboot:
 
 ```bash
 pm2 startup systemd
-# pm2 mencetak satu perintah "sudo env PATH=... pm2 startup ..." — SALIN & JALANKAN perintah itu
+# pm2 mencetak satu perintah yang diawali "sudo env PATH=..." — SALIN & JALANKAN perintah itu
 pm2 save
 ```
 
@@ -204,55 +229,54 @@ pm2 set pm2-logrotate:max_size 10M
 pm2 set pm2-logrotate:retain 7
 ```
 
-## Langkah 8 — Domain, Nginx, dan HTTPS
+## Langkah 8 — Nginx, firewall, dan HTTPS untuk lp-monitor.duckdns.org
 
-### 8a. Arahkan domain ke VPS
+Pastikan Langkah 0 sudah benar (`nslookup lp-monitor.duckdns.org` = IP VPS).
 
-Di panel DNS domain Anda, buat record:
-
-| Tipe | Nama | Nilai |
-|---|---|---|
-| A | `monitor` | `203.0.113.10` |
-
-Tunggu beberapa menit, lalu cek dari PC: `ping monitor.domainanda.com` harus menampilkan IP VPS.
-
-### 8b. Pasang konfigurasi Nginx
+### 8a. Pasang konfigurasi Nginx
 
 Proyek sudah menyertakan contoh konfigurasi, termasuk pengaturan khusus untuk alert live (SSE) supaya koneksinya tidak diputus Nginx.
 
 ```bash
 sudo cp ~/lp-monitor/deploy/nginx.conf.example /etc/nginx/sites-available/lp-monitor
-sudo sed -i 's/monitor.domainanda.com/DOMAIN-ANDA-DI-SINI/' /etc/nginx/sites-available/lp-monitor
+sudo sed -i 's/monitor.domainanda.com/lp-monitor.duckdns.org/' /etc/nginx/sites-available/lp-monitor
 sudo ln -s /etc/nginx/sites-available/lp-monitor /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default     # matikan halaman default Nginx
+grep server_name /etc/nginx/sites-available/lp-monitor   # harus: server_name lp-monitor.duckdns.org;
 sudo nginx -t                                   # harus "syntax is ok" dan "test is successful"
 sudo systemctl reload nginx
 ```
 
-### 8c. Buka firewall
+### 8b. Buka firewall
 
 ```bash
-sudo ufw allow OpenSSH        # PENTING: buka SSH dulu supaya tidak terkunci
+sudo ufw allow OpenSSH        # PENTING: buka SSH dulu supaya tidak terkunci dari VPS
 sudo ufw allow 'Nginx Full'   # port 80 & 443
-sudo ufw enable
+sudo ufw enable               # jawab y
 sudo ufw status
 ```
 
 Port 3000 sengaja **tidak** dibuka.
 
-### 8d. SSL gratis (Let's Encrypt)
+> Beberapa penyedia VPS (mis. AWS, Google Cloud, Oracle, Alibaba) juga punya firewall di panel web (*security group*). Pastikan port **80** dan **443** dibuka di sana juga.
+
+Sekarang **http://lp-monitor.duckdns.org** harus sudah menampilkan halaman login (masih HTTP, belum aman — jangan login dulu).
+
+### 8c. HTTPS gratis (Let's Encrypt)
 
 ```bash
 sudo apt-get install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d monitor.domainanda.com
-# isi email, setujui syarat, pilih redirect HTTP → HTTPS jika ditanya
+sudo certbot --nginx -d lp-monitor.duckdns.org
+# isi email, setujui syarat (Y); jika ditanya redirect, pilih redirect HTTP → HTTPS
 ```
 
-Certbot memperpanjang sertifikat otomatis. Tes perpanjangan: `sudo certbot renew --dry-run`.
+Jika berhasil, muncul *"Successfully deployed certificate"*. Certbot memperpanjang sertifikat otomatis; tes perpanjangan:
 
-### 8e. Aktifkan cookie aman
+```bash
+sudo certbot renew --dry-run
+```
 
-Setelah HTTPS jalan, ubah `.env`:
+### 8d. Aktifkan cookie aman
 
 ```bash
 cd ~/lp-monitor
@@ -260,7 +284,9 @@ sed -i 's/^SECURE_COOKIE=.*/SECURE_COOKIE=true/' .env
 pm2 restart lp-monitor
 ```
 
-Buka **https://monitor.domainanda.com**. Halaman login harus muncul; masuk dengan `DASHBOARD_PASSWORD`.
+### 8e. Buka dashboard
+
+Buka **https://lp-monitor.duckdns.org** (ada ikon gembok di browser). Login dengan `DASHBOARD_PASSWORD` dari Langkah 5.
 
 ## Langkah 9 — Pengaturan awal di dashboard
 
@@ -271,9 +297,19 @@ Buka **https://monitor.domainanda.com**. Halaman login harus muncul; masuk denga
    3. Tempel token, klik **Deteksi** untuk mengisi chat ID, klik **Simpan**.
    4. Klik **Kirim pesan tes**, lalu nyalakan switch **Aktif**.
 3. **Wallet**: tambahkan wallet yang ingin dipantau (jika belum dipindah dari database lama).
-4. Klik tombol 🔔 di kanan atas untuk suara & notifikasi browser (butuh HTTPS).
+4. Klik tombol 🔔 di kanan atas untuk suara & notifikasi browser.
 
-Selesai. Dashboard sekarang berjalan 24 jam.
+**Selesai.** Dashboard berjalan 24 jam di https://lp-monitor.duckdns.org. PC boleh dimatikan.
+
+### Cek cepat semuanya berjalan
+
+```bash
+pm2 status                                          # lp-monitor: online
+curl -sI https://lp-monitor.duckdns.org | head -1   # HTTP/1.1 200 OK (atau HTTP/2 200)
+sudo systemctl is-enabled pm2-lpmon                 # enabled → hidup lagi setelah reboot
+```
+
+Uji reboot (opsional): `sudo reboot`, tunggu 1 menit, buka lagi dashboard-nya.
 
 ---
 
@@ -281,7 +317,7 @@ Selesai. Dashboard sekarang berjalan 24 jam.
 
 Data (`data/`), konfigurasi (`.env`), dan log tidak ikut tersentuh.
 
-Di **PC** (setelah mengubah kode): kirim perubahan ke GitHub dari folder proyek:
+Di **PC** (setelah mengubah kode), kirim perubahan ke GitHub dari folder proyek:
 
 ```powershell
 git add -A
@@ -302,12 +338,12 @@ rm -rf dist       # buang hasil build lama supaya tidak ada file basi
 npm ci
 npm run build
 pm2 restart lp-monitor
-pm2 logs lp-monitor --lines 30
+pm2 logs lp-monitor --lines 30 --nostream
 ```
 
 Lalu buka dashboard dan tekan **Ctrl+F5** (muat ulang tanpa cache).
 
-> Jika `npm run build` gagal, aplikasi lama tetap berjalan (pm2 belum di-restart). Kembali ke versi sebelumnya dengan `git log --oneline` lalu `git checkout <kode-commit>`, build ulang, dan restart.
+> Jika `npm run build` gagal, aplikasi lama tetap berjalan (pm2 belum di-restart). Kembali ke versi sebelumnya dengan `git log --oneline` lalu `git checkout <kode-commit>`, build ulang, dan restart. Setelah masalahnya diperbaiki, kembali ke versi terbaru dengan `git checkout main`.
 
 ## Backup database otomatis
 
@@ -315,16 +351,16 @@ Backup harian jam 03.00, simpan 14 hari terakhir:
 
 ```bash
 mkdir -p ~/backup
-crontab -e
+crontab -e        # jika ditanya editor, pilih 1 (nano)
 ```
 
-Tambahkan baris ini (satu baris):
+Tambahkan baris ini di paling bawah (satu baris):
 
 ```cron
 0 3 * * * sqlite3 /home/lpmon/lp-monitor/data/monitor.db ".backup '/home/lpmon/backup/monitor-$(date +\%F).db'" && find /home/lpmon/backup -name 'monitor-*.db' -mtime +14 -delete
 ```
 
-`.backup` aman dijalankan saat aplikasi hidup. Sesekali salin folder `~/backup` ke PC: `scp -r lpmon@203.0.113.10:~/backup .`
+`.backup` aman dijalankan saat aplikasi hidup. Sesekali salin backup ke PC (PowerShell): `scp -r lpmon@IP-VPS:~/backup .`
 
 **Memulihkan** backup:
 
@@ -335,41 +371,43 @@ rm -f ~/lp-monitor/data/monitor.db-wal ~/lp-monitor/data/monitor.db-shm
 pm2 start lp-monitor
 ```
 
-## Akses tanpa domain (SSH tunnel)
+## Alternatif: akses lewat SSH tunnel
 
-Tidak punya domain? Jangan buka port 3000 ke internet. Lewati Langkah 8, lalu buka dashboard lewat tunnel SSH dari PC:
+Jika suatu saat domain tidak bisa dipakai, dashboard tetap bisa dibuka lewat tunnel SSH dari PC tanpa membuka port apa pun:
 
 ```powershell
-ssh -L 3000:127.0.0.1:3000 lpmon@203.0.113.10
+ssh -L 3000:127.0.0.1:3000 lpmon@IP-VPS
 ```
 
-Selama jendela itu terbuka, dashboard bisa dibuka di **http://localhost:3000** di PC. Biarkan `SECURE_COOKIE=false`. Notifikasi browser juga jalan karena alamatnya `localhost`.
+Selama jendela itu terbuka, buka **http://localhost:3000** di PC. (Login di sini membutuhkan `SECURE_COOKIE=false`; kembalikan ke `true` setelah selesai.)
 
 ## Perintah sehari-hari
 
 | Keperluan | Perintah |
 |---|---|
 | Status aplikasi | `pm2 status` |
-| Lihat log live | `pm2 logs lp-monitor` |
+| Lihat log live | `pm2 logs lp-monitor` (keluar: `Ctrl+C`) |
 | 100 baris log terakhir | `pm2 logs lp-monitor --lines 100 --nostream` |
 | Restart (mis. setelah ubah `.env`) | `pm2 restart lp-monitor` |
 | Stop / start | `pm2 stop lp-monitor` / `pm2 start lp-monitor` |
 | Pemakaian CPU & RAM | `pm2 monit` |
 | Cek Nginx | `sudo nginx -t && sudo systemctl status nginx` |
 | Log error Nginx | `sudo tail -f /var/log/nginx/error.log` |
+| Cek domain mengarah ke mana | `nslookup lp-monitor.duckdns.org` |
 
 ## Mengatasi masalah
 
 | Gejala | Penyebab & solusi |
 |---|---|
+| `certbot` gagal: *"Timeout during connect"* / *"unauthorized"* | Domain belum mengarah ke VPS atau port 80 tertutup. Cek Langkah 0 (`nslookup` = IP VPS), `sudo ufw status` (Nginx Full), dan firewall di panel penyedia VPS |
+| Browser tidak bisa membuka lp-monitor.duckdns.org sama sekali | IP di DuckDNS salah (mis. terisi IP rumah). Perbaiki di duckdns.org → **update ip** |
 | pm2 status `errored`, log: *"NODE_ENV=production … Isi DASHBOARD_PASSWORD"* | `DASHBOARD_PASSWORD` di `.env` masih kosong. Isi, lalu `pm2 restart lp-monitor` |
-| Browser: **502 Bad Gateway** | Aplikasi tidak jalan. Cek `pm2 status` dan `pm2 logs lp-monitor`. Pastikan `PORT` di `.env` sama dengan `proxy_pass` di Nginx (3000) |
-| Tidak bisa login padahal password benar | Jika masih HTTP (belum SSL), `SECURE_COOKIE` harus `false`. Setelah HTTPS aktif baru `true` |
-| Status kanan atas terus *"Terputus, menyambung ulang…"* | Blok `location /api/stream` di Nginx hilang / berbeda. Salin ulang dari `deploy/nginx.conf.example`, lalu `sudo nginx -t && sudo systemctl reload nginx` |
-| Saldo SOL/USDC "gagal dibaca", strategi / grafik bin gagal | RPC mati atau kena limit (429). Buka **Pengaturan → RPC**, klik **Tes**, tambahkan RPC cadangan |
-| Log sering berisi `rate limit (HTTP 429)` dari Meteora | Terlalu banyak wallet per siklus. Naikkan `POLL_INTERVAL_SEC` (mis. 10) atau turunkan `TRACKER_CONCURRENCY` (mis. 2) |
+| Browser: **502 Bad Gateway** | Aplikasi tidak jalan. Cek `pm2 status` dan `pm2 logs lp-monitor`. Pastikan `PORT=3000` di `.env` |
+| Tidak bisa login padahal password benar | Masih HTTP tapi `SECURE_COOKIE=true`. Buka lewat **https://**, atau set `false` jika belum ada SSL |
+| Status kanan atas terus *"Terputus, menyambung ulang…"* | Blok `location /api/stream` di Nginx hilang / berbeda. Ulangi Langkah 8a lalu jalankan lagi `sudo certbot --nginx -d lp-monitor.duckdns.org` |
+| Saldo SOL/USDC "gagal dibaca", strategi / grafik bin gagal | RPC mati atau kena limit (429). **Pengaturan → RPC**, klik **Tes**, tambahkan RPC cadangan |
+| Log sering berisi `rate limit (HTTP 429)` dari Meteora | Terlalu banyak wallet per siklus. Naikkan `POLL_INTERVAL_SEC` (mis. 10) atau turunkan `TRACKER_CONCURRENCY` (mis. 2), lalu restart |
 | Track Wallet: *"Scan GMGN gagal"* | IP VPS diblokir GMGN / konstanta GMGN kedaluwarsa. Jalankan scan di PC, lalu tempel daftar wallet di **Tempel daftar wallet manual** |
-| Log: *"curl tidak ditemukan"* | `sudo apt-get install -y curl` lalu `pm2 restart lp-monitor` |
 | Pesan tes Telegram gagal: *"chat ID tidak ditemukan"* | Kirim `/start` ke bot dulu (untuk grup: tambahkan bot ke grup), lalu klik **Deteksi** lagi |
 | `npm ci` berhenti / *"Killed"* | RAM habis. Tambahkan swap (lihat Langkah 2) |
 | `git pull` menolak: *"Your local changes would be overwritten"* | Ada file kode yang diubah langsung di VPS. Buang perubahan itu: `git checkout -- .` lalu `git pull` lagi (`.env` dan `data/` aman, tidak dilacak git) |
