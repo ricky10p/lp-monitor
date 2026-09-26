@@ -6,7 +6,7 @@
  * code != 0), ambil nilai baru dari Network tab browser lalu ganti dua konstanta itu.
  * Kalau IP server (mis. VPS) diblokir, daftar wallet bisa ditempel manual di halaman Track Wallet.
  */
-import { sleep, type OnRetry } from '../lib/retry.js';
+import type { OnRetry } from '../lib/retry.js';
 import { curlJson } from './curl.js';
 
 const API_BASE = 'https://gmgn.ai/vas/api/mul-region/token_trades_v2/sol';
@@ -18,7 +18,8 @@ const APP_VER = '20260921-4720-f21d674';
 
 // API meng-cap di 50 item per halaman walaupun diminta lebih.
 const PAGE_LIMIT = 50;
-const DELAY_MS = 400;
+// Tanpa jeda antar halaman: diuji ~30 req/dtk (20 paralel) tetap 200, tidak ada 429.
+// Kalau GMGN suatu saat membalas 429, withRetry (lewat curlJson) otomatis menunggu dulu.
 
 interface GmgnResponse {
   code: number;
@@ -92,7 +93,6 @@ export async function scanRemovers(
 
     if (history.length === 0 || !next || next === cursor) break;
     cursor = next;
-    await sleep(DELAY_MS);
   }
   return { pages: page, trades };
 }
