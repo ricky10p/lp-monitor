@@ -608,6 +608,7 @@ async function renderCalendar(token, address, st, fresh = false) {
       <button class="btn sm ghost icon" data-nav="1" aria-label="Bulan berikutnya" ${isCurrent ? 'disabled' : ''}>${icon.chevron}</button>
     </div>
     <div id="calBody">${skeleton(5)}</div>
+    <div class="cal-detail" id="calDetail" aria-live="polite"></div>
     <div class="cal-foot" id="calFoot"></div>`;
   el.onclick = (e) => {
     const b = e.target.closest('button');
@@ -631,6 +632,38 @@ async function renderCalendar(token, address, st, fresh = false) {
   );
 }
 
+/** Ketuk / klik tanggal → detail lengkap hari itu di bawah kalender (tooltip tidak jalan di layar sentuh). */
+function bindCalendarDetail(body, days, stat, today) {
+  const detail = document.getElementById('calDetail');
+  if (!detail) return;
+  const show = (date) => {
+    const d = days.find((x) => x.date === date);
+    body.querySelectorAll('.cal-day.selected').forEach((el) => el.classList.remove('selected'));
+    if (!d) {
+      detail.innerHTML = '<span class="faint">Ketuk tanggal untuk melihat detail profit hari itu.</span>';
+      return;
+    }
+    body.querySelector(`[data-date="${d.date}"]`)?.classList.add('selected');
+    const s = stat(d);
+    detail.innerHTML = `<div class="cal-detail-date">${dayLabel(Date.parse(`${d.date}T12:00:00Z`) / 1000)} · ${dateShort(d.date)}</div>
+      ${
+        s.closed || s.pnl
+          ? `<div class="cal-detail-grid">
+              <span>PnL</span><b class="${cls(s.pnl)}">${usd(s.pnl, true)}</b>
+              <span>Posisi ditutup</span><b>${int(s.closed)} <small class="faint">(${int(s.wins)} profit / ${int(s.losses)} rugi)</small></b>
+              <span>Fee</span><b>${usd(s.fees)}</b>
+            </div>`
+          : '<div class="faint">Tidak ada posisi yang ditutup.</div>'
+      }`;
+  };
+  body.onclick = (e) => {
+    const cell = e.target.closest('.cal-day[data-date]');
+    if (cell) show(cell.dataset.date);
+  };
+  // Awalnya tampilkan hari ini jika ada di bulan ini, selain itu petunjuk.
+  show(days.some((d) => d.date === today) ? today : '');
+}
+
 function drawCalendar(days, st, y, mo) {
   const stat = (d) => d[st.proto];
   const total = sum(days, (d) => stat(d).pnl);
@@ -650,10 +683,13 @@ function drawCalendar(days, st, y, mo) {
     for (const d of days) {
       const s = stat(d);
       const c = s.pnl > 0 ? 'win' : s.pnl < 0 ? 'loss' : '';
-      cells.push(`<div class="cal-day ${c} ${d.date === today ? 'today' : ''}" title="${esc(tip(d))}">
+      // Angka di kotak diringkas ($1.0K) supaya muat di layar HP; angka lengkap di panel detail saat diketuk.
+      cells.push(`<div class="cal-day ${c} ${d.date === today ? 'today' : ''}" data-date="${d.date}" role="button" tabindex="0"
+          title="${esc(tip(d))}" aria-label="${esc(tip(d).replace(/\n/g, ' · '))}">
           <span class="d">${Number(d.date.slice(8))}</span>${s.closed || s.pnl ? `<span class="p ${cls(s.pnl)}">${compactUsd(s.pnl)}</span>` : ''}</div>`);
     }
     body.innerHTML = `<div class="cal-grid">${cells.join('')}</div>`;
+    bindCalendarDetail(body, days, stat, today);
   } else {
     const max = Math.max(1e-9, ...days.map((d) => Math.abs(stat(d).pnl)));
     const hasNeg = days.some((d) => stat(d).pnl < 0);

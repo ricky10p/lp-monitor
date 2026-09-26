@@ -47,11 +47,16 @@ export const int = (v) => (ok(v) ? fmtNum(v) : '–');
 /** Jumlah token: 2 desimal untuk angka besar, hingga 6 untuk angka kecil. */
 export const amt = (v) => (!ok(v) ? '–' : v === 0 ? '0' : fmtNum(v, { maximumFractionDigits: Math.abs(v) >= 1000 ? 2 : 6 }));
 
-/** Dolar ringkas untuk ruang sempit (kalender): $12.34, $15.2K, $1.25M. */
+/**
+ * Dolar ringkas untuk kotak kalender (maks ±6 karakter supaya muat di layar HP):
+ * $4.5 · $216 · $1.0K · $15K · $1.2M. Angka lengkap tetap ada di tooltip & panel detail.
+ */
 export function compactUsd(v) {
   if (!ok(v)) return '';
   const a = Math.abs(v);
-  const t = a >= 1e6 ? `${(a / 1e6).toFixed(2)}M` : a >= 1e4 ? `${(a / 1e3).toFixed(1)}K` : a.toFixed(2);
+  if (a < 0.05) return '$0';
+  const t =
+    a >= 1e6 ? `${(a / 1e6).toFixed(1)}M` : a >= 1e4 ? `${Math.round(a / 1e3)}K` : a >= 1e3 ? `${(a / 1e3).toFixed(1)}K` : a >= 10 ? a.toFixed(0) : a.toFixed(1);
   return `${signOf(v, false)}$${t}`;
 }
 

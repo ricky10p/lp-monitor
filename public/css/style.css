@@ -406,13 +406,22 @@ table.table { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
   min-height: 46px; border: 1px solid var(--border); border-radius: 5px; padding: 4px 2px; text-align: center;
   display: flex; flex-direction: column; justify-content: center; gap: 1px; font-size: 11.5px; background: var(--card);
 }
-.cal-day .d { color: var(--muted); font-size: 11.5px; }
-.cal-day .p { font-weight: 600; font-size: 11px; font-variant-numeric: tabular-nums; }
+.cal-day .d { color: var(--muted); font-size: 11.5px; line-height: 1.2; }
+.cal-day .p { font-weight: 600; font-size: 11px; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Semua kotak tanggal persegi & seragam, berisi angka atau tidak. */
+.cal-day:not(.empty) { aspect-ratio: 1; min-height: 0; cursor: pointer; overflow: hidden; }
+.cal-day:not(.empty):hover { border-color: var(--border-2); }
+.cal-day.selected { box-shadow: inset 0 0 0 2px var(--green); }
+.cal-detail { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-2); border: 1px solid var(--border); font-size: 13px; min-height: 44px; }
+.cal-detail-date { font-weight: 600; margin-bottom: 6px; }
+.cal-detail-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; }
+.cal-detail-grid > span { color: var(--muted); }
+.cal-detail-grid > b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .cal-day.win { background: color-mix(in srgb, var(--green) 9%, var(--card)); border-color: color-mix(in srgb, var(--green) 30%, var(--border)); }
 .cal-day.loss { background: color-mix(in srgb, var(--red-2) 9%, var(--card)); border-color: color-mix(in srgb, var(--red-2) 30%, var(--border)); }
 .cal-day.today { box-shadow: inset 0 0 0 1.5px var(--blue); }
 .cal-day.empty { border: 0; background: transparent; }
-.cal-foot { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.cal-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: 13px; color: var(--muted); }
 .cal-foot b { font-weight: 600; }
 .bars { display: flex; align-items: flex-end; gap: 3px; height: 190px; padding: 8px 0 0; border-bottom: 1px solid var(--border); position: relative; }
 .bars .zero { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--border-2); }
@@ -575,6 +584,12 @@ table.table { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
   .pf-head .addr { min-width: 0; word-break: break-all; }
   /* Persen PnL turun ke baris kedua supaya kolom tabel tidak terpotong. */
   .table td.num .nowrap { display: block; }
+  /* Kalender profit di HP: kotak lebih rapat, angka sedikit lebih kecil. */
+  .cal-grid { gap: 3px; }
+  .cal-day { padding: 2px 1px; border-radius: 4px; }
+  .cal-day .d { font-size: 10.5px; }
+  .cal-day .p { font-size: 9.5px; letter-spacing: -0.02em; }
+  .calendar-box { padding: 10px 8px; }
   .hide-sm { display: none; }
   .table td, .table th { padding: 9px 8px; }
   .panel-grid { grid-template-columns: 1fr; }
