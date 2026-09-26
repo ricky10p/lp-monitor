@@ -88,25 +88,22 @@ pm2 -v
 > echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 > ```
 
-## Langkah 3 — Kirim kode dari PC ke VPS
+## Langkah 3 — Ambil kode dari GitHub
 
-Di **PC Windows**, buka PowerShell di folder proyek (`Documents\Gabungan`), lalu bungkus file yang dibutuhkan jadi satu arsip. Folder `node_modules`, `dist`, `data`, dan file `.env` **tidak** ikut:
-
-```powershell
-tar -czf lp-monitor.tgz src public package.json package-lock.json tsconfig.json ecosystem.config.cjs deploy .env.example
-scp lp-monitor.tgz lpmon@203.0.113.10:~/
-```
-
-> Ingin wallet langsung terisi saat pertama jalan? Tambahkan `wallets.seed.json` ke perintah `tar`. File ini hanya dibaca sekali saat database masih kosong.
-
-Di **VPS**:
+Kode ada di GitHub: **https://github.com/ricky10p/lp-monitor** (repo publik, clone tanpa login). Di **VPS**:
 
 ```bash
-mkdir -p ~/lp-monitor
-tar -xzf ~/lp-monitor.tgz -C ~/lp-monitor
+sudo apt-get install -y git
+cd ~
+git clone https://github.com/ricky10p/lp-monitor.git
 cd ~/lp-monitor
-ls   # harus terlihat: src public package.json ecosystem.config.cjs deploy ...
+ls   # harus terlihat: src public package.json ecosystem.config.cjs deploy DEPLOY.md ...
 ```
+
+File rahasia & data **tidak ada** di GitHub (`.env`, `data/`, `wallets.seed.json`), jadi dibuat / disalin terpisah di langkah berikutnya.
+
+> Ingin wallet langsung terisi saat pertama jalan? Salin `wallets.seed.json` dari PC (PowerShell di folder proyek):
+> `scp wallets.seed.json lpmon@203.0.113.10:~/lp-monitor/`. File ini hanya dibaca sekali saat database masih kosong.
 
 ## Langkah 4 — Install dependensi dan build
 
@@ -284,7 +281,15 @@ Selesai. Dashboard sekarang berjalan 24 jam.
 
 Data (`data/`), konfigurasi (`.env`), dan log tidak ikut tersentuh.
 
-Di **PC**: buat arsip lagi seperti [Langkah 3](#langkah-3--kirim-kode-dari-pc-ke-vps) lalu `scp` ke VPS. Di **VPS**:
+Di **PC** (setelah mengubah kode): kirim perubahan ke GitHub dari folder proyek:
+
+```powershell
+git add -A
+git commit -m "Jelaskan perubahan di sini"
+git push
+```
+
+Di **VPS**:
 
 ```bash
 cd ~/lp-monitor
@@ -292,10 +297,8 @@ cd ~/lp-monitor
 # Cadangkan database dulu (jaga-jaga)
 sqlite3 data/monitor.db ".backup 'data/monitor-sebelum-update.db'"
 
-# Hapus kode lama: file yang sudah dihapus/dipindah di versi baru tidak boleh tertinggal
-rm -rf src public dist deploy
-
-tar -xzf ~/lp-monitor.tgz -C ~/lp-monitor
+git pull          # ambil versi terbaru (file yang dihapus di versi baru ikut terhapus)
+rm -rf dist       # buang hasil build lama supaya tidak ada file basi
 npm ci
 npm run build
 pm2 restart lp-monitor
@@ -304,7 +307,7 @@ pm2 logs lp-monitor --lines 30
 
 Lalu buka dashboard dan tekan **Ctrl+F5** (muat ulang tanpa cache).
 
-> Jika `npm run build` gagal, aplikasi lama tetap berjalan (pm2 belum di-restart). Perbaiki error-nya dulu, atau kembalikan kode lama.
+> Jika `npm run build` gagal, aplikasi lama tetap berjalan (pm2 belum di-restart). Kembali ke versi sebelumnya dengan `git log --oneline` lalu `git checkout <kode-commit>`, build ulang, dan restart.
 
 ## Backup database otomatis
 
@@ -369,7 +372,7 @@ Selama jendela itu terbuka, dashboard bisa dibuka di **http://localhost:3000** d
 | Log: *"curl tidak ditemukan"* | `sudo apt-get install -y curl` lalu `pm2 restart lp-monitor` |
 | Pesan tes Telegram gagal: *"chat ID tidak ditemukan"* | Kirim `/start` ke bot dulu (untuk grup: tambahkan bot ke grup), lalu klik **Deteksi** lagi |
 | `npm ci` berhenti / *"Killed"* | RAM habis. Tambahkan swap (lihat Langkah 2) |
-| `npm run build` error tentang file yang tidak ada di versi baru | Kode lama tertinggal. Ikuti langkah [Update](#update-ke-versi-baru) (hapus `src` sebelum ekstrak) |
+| `git pull` menolak: *"Your local changes would be overwritten"* | Ada file kode yang diubah langsung di VPS. Buang perubahan itu: `git checkout -- .` lalu `git pull` lagi (`.env` dan `data/` aman, tidak dilacak git) |
 | Setelah update tampilan tidak berubah | Tekan **Ctrl+F5** di browser |
 | Aplikasi restart sendiri berulang | Cek `pm2 logs`. Batas memori 512 MB (`ecosystem.config.cjs`); jika memang perlu lebih, naikkan `max_memory_restart` |
 
